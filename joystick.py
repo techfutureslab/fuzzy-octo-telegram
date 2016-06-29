@@ -4,6 +4,11 @@
 
 import os, struct, array
 from fcntl import ioctl
+import socket
+
+IP = "192.168.1.64"
+UDP_port = 10000
+sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
 
 # Iterate over the joystick devices.
 print('Available devices:')
@@ -93,8 +98,8 @@ button_map = []
 
 # Open the joystick device.
 #fn = '/dev/input/js0'
-#fn = '/dev/input/js1'
-fn = '/dev/input/js2'
+fn = '/dev/input/js1'
+#fn = '/dev/input/js2'
 print('Opening %s...' % fn)
 jsdev = open(fn, 'rb')
 
@@ -152,10 +157,14 @@ while True:
                     print "%s pressed" % (button)
                 else:
                     print "%s released" % (button)
-
+                if((("%s" % button)=='base2') & (value==0) & (not(type & 0x80))):
+                    break
         if type & 0x02:
             axis = axis_map[number]
             if axis:
                 fvalue = value / 32767.0
                 axis_states[axis] = fvalue
-                print "%s: %.3f" % (axis, fvalue)
+                # print "%s: %.3f " % (axis, fvalue)
+                T = "*%s| %.0f #" % (axis, 1000*fvalue)
+                print T
+                sock.sendto(str.encode(T), (IP, UDP_port))
