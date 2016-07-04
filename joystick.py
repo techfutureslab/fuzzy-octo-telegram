@@ -6,11 +6,11 @@ import os, struct, array
 from fcntl import ioctl
 import socket
 import time as python_time
-import threading
+import threading, Queue
 
-X = 0
-Z = 0
 K = ""
+q = Queue.LifoQueue()
+
 axis_names = {
     0x00: 'x',
     0x01: 'y',
@@ -82,17 +82,14 @@ button_names = {
     0x2c3: 'dpad_down',
 }
 
-
 IP = "192.168.1.101"
 port = 10000
 # sock = socket.socket(socket.AF_INET,socket.SOCK_DGRAM)
-
-
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.connect((IP, port))
 
 
-def MotorSpeed():
+def motor_speed(X=0,Z=0):
     R = -255*(X+Z)/1000
     L = 255*(Z-X)/1000
     if(L>254): L=254
@@ -101,21 +98,34 @@ def MotorSpeed():
     if(R<-254):R=-254
     # CRC = chr(sum([ord(i) for i in str]) % 255)
     K = str("*{:0=+4d},{:0=+4d}# | ").format(int(L), int(R))
+    q.put(K)
+    print "K in motor speed thread is : %s" % K
 
-    # sock.sendto(str.encode(K), (IP, port))
-
-
-def TrainSender():
+def train_sender():
+    K = q.get()
     while(True):
-        python_time.sleep(0.02)
-        print K
+        print "K in train sender is : %s" % K
         stringToSend = str.encode(K)
         lengthOfStringToSend = len(stringToSend)
-        if s.send(stringToSend) != lengthOfStringToSend:
-            print "******************************************* ERROR ************************"
-TS = threading.Thread(name='TrainSender')
+        try:
+            if s.send(stringToSend) != lengthOfStringToSend:
+                print "******************************************* ERROR ************************"
+        except:
+            print "************************************* Application closed ************************"
+            exit()
+        python_time.sleep(0.5)
+        if q.empty():
+            continue
+        else:
+            K = q.get()
+            for i in range(q.qsize()):
+                U = q.get()
+        # sock.sendto(str.encode(K), (IP, port))
 
-def EventListener():
+
+def event_listener():
+    X = 0
+    Z = 0
     # Iterate over the joystick devices.
     print('Available devices:')
     for fn in os.listdir('/dev/input'):
@@ -195,7 +205,9 @@ def EventListener():
                     else:
                         print "%s released" % (button)
                     if((("%s" % button)=='base2') & (value==0) & (not(type & 0x80))):
-                        break
+                        s.close()
+                        print "Connection Closed!"
+                        exit()
             if type & 0x02:
                 axis = axis_map[number]
                 if axis:
@@ -210,15 +222,13 @@ def EventListener():
 
                     T = "*%s| %.0f #" % (axis, 1000*fvalue)
                     # print X,Z
-                    MotorSpeed()
+                    motor_speed(X,Z)
                     # print T
                     # sock.sendto(str.encode(T), (IP, port))
                     # s.send(str.encode(T))
 
 
-    s.close()
-EL=threading.Thread(name='EventListener')
-
-
+TS = threading.Thread(name='train_sender', target=train_sender)
+EL = threading.Thread(name='event_listener', target=event_listener)
 EL.start()
 TS.start()
